@@ -1,98 +1,122 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from "expo-status-bar";
+import { useMemo, useState } from "react";
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+} from "react-native";
+import Animated, { LinearTransition } from "react-native-reanimated";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { AddTodoInput } from "@/components/AddTodoInput";
+import { EmptyState } from "@/components/EmptyState";
+import { FilterBar } from "@/components/FilterBar";
+import { TodoItem } from "@/components/TodoItem";
+import { useTodos } from "@/hooks/useTodos";
+import { useThemeColors } from "@/theme/colors";
+import type { TodoFilter } from "@/types/todo";
+import { countTodos, filterTodos } from "@/utils/todos";
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+export default function Index() {
+  const colors = useThemeColors();
+  const { todos, isLoaded, add, remove, toggleCompleted, toggleArchived } =
+    useTodos();
+  const [filter, setFilter] = useState<TodoFilter>("open");
+
+  const visibleTodos = useMemo(
+    () => filterTodos(todos, filter),
+    [todos, filter],
+  );
+  const counts = useMemo(() => countTodos(todos), [todos]);
+
+  const handleAdd = (text: string) => {
+    add(text);
+    // New todos are open, so switch to the Open view to show the new item.
+    setFilter("open");
+    announce(`Added ${text}`);
+  };
+
+  // Each action moves or removes the item from the current tab, so tell
+  // screen reader users what happened.
+  const handleToggleComplete = (id: string) => {
+    const todo = todos.find((t) => t.id === id);
+    toggleCompleted(id);
+    if (todo) announce(`${todo.text} ${todo.completed ? "reopened" : "completed"}`);
+  };
+
+  const handleToggleArchive = (id: string) => {
+    const todo = todos.find((t) => t.id === id);
+    toggleArchived(id);
+    if (todo) announce(`${todo.text} ${todo.archived ? "unarchived" : "archived"}`);
+  };
+
+  const handleDelete = (id: string) => {
+    const todo = todos.find((t) => t.id === id);
+    remove(id);
+    if (todo) announce(`${todo.text} deleted`);
+  };
+
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar style="auto" />
+      <Text
+        style={[styles.title, { color: colors.text }]}
+        accessibilityRole="header"
+      >
+        Todos
+      </Text>
+      <AddTodoInput onAdd={handleAdd} />
+      <FilterBar value={filter} counts={counts} onChange={setFilter} />
+      {!isLoaded ? (
+        <ActivityIndicator
+          style={styles.loading}
+          color={colors.textMuted}
+          accessibilityLabel="Loading todos"
+        />
+      ) : (
+        <Animated.FlatList
+          data={visibleTodos}
+          keyExtractor={(todo) => todo.id}
+          renderItem={({ item }) => (
+            <TodoItem
+              todo={item}
+              onDelete={handleDelete}
+              onToggleComplete={handleToggleComplete}
+              onToggleArchive={handleToggleArchive}
+            />
+          )}
+          itemLayoutAnimation={LinearTransition.duration(200)}
+          contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          ListEmptyComponent={<EmptyState filter={filter} />}
+        />
+      )}
+    </SafeAreaView>
   );
 }
 
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
-  );
+function announce(message: string) {
+  AccessibilityInfo.announceForAccessibility(message);
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
   },
   title: {
-    textAlign: 'center',
+    fontSize: 32,
+    fontWeight: "700",
+    paddingHorizontal: 16,
+    paddingTop: 8,
   },
-  code: {
-    textTransform: 'uppercase',
+  loading: {
+    marginTop: 32,
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  list: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 8,
   },
 });
